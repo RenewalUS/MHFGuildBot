@@ -1,0 +1,6 @@
+aiohttp
+psycopg2
+bcrypt
+aiosqlite
+discord.py
+python-dotenv 
