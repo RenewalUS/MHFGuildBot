@@ -1,8 +1,9 @@
 import discord
-from discord.ext import tasks,commands
+from discord.ext import commands
 from discord import app_commands
 from discord.ext.commands import Context
 import psycopg2
+from typing import List
 from dotenv import load_dotenv
 import os
 
@@ -10,26 +11,37 @@ import os
 class guilds(commands.Cog, name="guilds"):
     load_dotenv()
     
+    async def guild_autocomplete(self,
+        interaction: discord.Interaction,
+        current: str,
+    ) -> List[app_commands.Choice[str]]:
+        conn = None
+        try:
+               conn = psycopg2.connect(host=os.getenv("HOST"),database=os.getenv("DATABASE"),user=os.getenv("USER"),password=os.getenv("PASSWORD"))
+
+               cur = conn.cursor()
+
+               cur.execute("SELECT Name from guilds ORDER BY ID;")
+               temp = cur.fetchall()
+               choices = [str(element[0]) for element in temp]
+              
+               cur.close()
+               return [
+                    app_commands.Choice(name=choice, value=choice)
+                    for choice in choices if current.lower() in choice.lower()
+               ]
+        except (Exception, psycopg2.DatabaseError) as error:
+             print(error)
+
+        finally:
+             if conn is not None:
+                  conn.close()
+    
     def __init__(self, bot) -> None:
           self.bot = bot
-          self.normal1 = bot.get_channel()
          
           
-    @tasks.loop(minutes=1.0)
-    async def player_task(self) -> None:
-        """
-        Setup the game status task of the bot.
-        """
-        statuses = ["Being Coded", "In Dev.!", "not yet ready"]
-        await self.change_presence(activity=discord.Game(random.choice(statuses)))
-
-    @player_task.before_loop
-    async def before_player_task(self) -> None:
-        """
-        Before starting the status changing task, we make sure the bot is ready
-        """
-        await self.wait_until_ready()
-
+     
     @commands.hybrid_command(
         name="list",
         description="This command lists all the guilds.",
@@ -65,6 +77,7 @@ class guilds(commands.Cog, name="guilds"):
          description="This command lists all characters from a guild"
     )                 
     @app_commands.describe(guildname="the name of the guild you want to list players from")
+    @app_commands.autocomplete(guildname=guild_autocomplete)
     async def listplayers(self, context: Context , guildname : str) -> None:
          conn = None
          try:
@@ -109,6 +122,7 @@ class guilds(commands.Cog, name="guilds"):
          description="This command adds a character to a guild"
     )
     @app_commands.describe(player="The name of the character you want to add.", guildname="the name of the guild you want to add it to")
+    @app_commands.autocomplete(guildname=guild_autocomplete)
     async def addcharacter(self, context: Context, player: str, guildname: str) -> None:
          conn = None
          
@@ -160,6 +174,7 @@ class guilds(commands.Cog, name="guilds"):
          description="This command adds a character to a guild"
     )
     @app_commands.describe(id="The id of the character you want to add.", guildname="the name of the guild you want to add it to")
+    @app_commands.autocomplete(guildname=guild_autocomplete)
     async def addcharacterbyid(self, context: Context, id: str, guildname: str) -> None:
          
          conn = None
@@ -200,6 +215,7 @@ class guilds(commands.Cog, name="guilds"):
             description="This command removes a character from a guild"
         )
     @app_commands.describe(player="The name of the character you want to remove.", guildname="the name of the guild you want to remove it from")
+    @app_commands.autocomplete(guildname=guild_autocomplete)
     async def addplayer(self, context: Context, player: str, guildname: str) -> None:
             
             conn = None
@@ -339,12 +355,13 @@ class guilds(commands.Cog, name="guilds"):
                 description="This command gives the leader of a guild"
             )
     @app_commands.describe( guildname="the name of the guild you want to know the leader of")
+    @app_commands.autocomplete(guildname=guild_autocomplete)
     async def leader(self, context: Context, guildname: str) -> None:
                 conn = None
                 try:
                         conn = psycopg2.connect(host=os.getenv("HOST"),database=os.getenv("DATABASE"),user=os.getenv("USER"),password=os.getenv("PASSWORD"))
                         cur = conn.cursor()
-                        guildquery = "Select leader_id from guilds where name=" + guildname + ";"
+                        guildquery = "Select leader_id from guilds where name='" + guildname + "';"
                         cur.execute(guildquery)
                         guildresult = cur.fetchone()
                         if(cur.rowcount == 0):
@@ -354,24 +371,20 @@ class guilds(commands.Cog, name="guilds"):
                             await context.send(embed=embed)
 
                         leaderid = str(guildresult[0])
-                        playerquery = "SELECT id from characters where name=" + leaderid + ";"
+                        playerquery = "SELECT name from characters where id=" + leaderid + ";"
                         cur.execute(playerquery)
                         playerresult = cur.fetchone()
                         if(cur.rowcount == 0):
                             cur.close()
-                            errmsg = "No player with the name " + player
+                            errmsg = "No player with the name " + str(playerresult[0])
                             embed = discord.Embed(title="Error", description=errmsg)
                             await context.send(embed=embed)
                             
-                        playerid = str(playerresult[0])
-
-                        removequery = "DELETE FROM guild_characters where guild_id=" + guildid + " AND player_id=" + playerid + ";"
-
-                        cur.execute(removequery)
+                        leadername = str(playerresult[0])
 
                         cur.close()
-                        mess = "Player " + player + " removed from guild" + guildname + " with success"
-                        embed = discord.Embed(title="add", description=mess)
+                        mess = "The leader of the guild " + guildname + " is " + leadername + "."
+                        embed = discord.Embed(title="Leader", description=mess)
                         await context.send(embed=embed)
 
                 except (Exception, psycopg2.DatabaseError) as error:
@@ -384,7 +397,7 @@ class guilds(commands.Cog, name="guilds"):
               name="resetloginboost",
               description="Resets the login boost from a character"
      )
-    @app_commands.describe(name="the name of the character you want to reset the login boost  for ")
+    @app_commands.describe(name="the name of the character you want to reset the login boost for")
     async def resetloginboost(self, context: Context, name : str) -> None:
           
                conn = None
