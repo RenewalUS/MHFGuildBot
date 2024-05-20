@@ -50,12 +50,30 @@ class Applications(commands.Cog, name="applications"):
             self.conn.notifies.clear()
     
 
+
+    async def preparenotify(self) -> None :
+          await self.bot.wait_until_ready()
+          cursor = self.conn.cursor()
+          cursor.execute(f"CREATE OR REPLACE FUNCTION notify_new_application() RETURNS trigger AS $$
+                         BEGIN
+                         PERFORM pg_notify('applications_notification', NEW.id::text);
+                         RETURN NEW;
+                         END;
+                         $$ LANGUAGE plpgsql;
+                         CREATE OR REPLACE TRIGGER application_notify_trigger
+                         AFTER INSERT ON guild_applications
+                         FOR EACH ROW EXECUTE PROCEDURE notify_new_application();")
+          self.conn.commit()
+          print("Added or replaced trigger successful")
+          return None
+
     @application_task.before_loop
     async def before_status_task(self) -> None:
         """
         Before starting the status changing task, we make sure the bot is ready
         """
         await self.bot.wait_until_ready()
+        await self.preparenotify(self)
         print("ready to listen") 
         self.conn.set_isolation_level(psycopg2.extensions.ISOLATION_LEVEL_AUTOCOMMIT)
         cursor = self.conn.cursor()
